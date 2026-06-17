@@ -1,0 +1,23 @@
+from transformers import pipeline
+
+summarizer = pipeline(
+    "summarization",
+    model="facebook/bart-large-cnn"
+)
+
+def generate_summary(
+        transcript
+):
+
+    if len(transcript) < 50:
+
+        return transcript
+
+    result = summarizer(
+        transcript,
+        max_length=120,
+        min_length=30,
+        do_sample=False
+    )
+
+    return result[0]["summary_text"]
