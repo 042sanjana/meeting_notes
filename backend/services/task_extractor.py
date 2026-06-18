@@ -1,58 +1,52 @@
 import re
+import dateparser
 
-TASK_KEYWORDS = [
-    "complete",
-    "finish",
-    "prepare",
-    "submit",
-    "review",
-    "test",
-    "develop",
-    "create"
-]
 
-def extract_tasks(
-        transcript
-):
+def extract_tasks(transcript):
 
     tasks = []
 
-    sentences = re.split(
-        r'[.\n]',
-        transcript
-    )
+    patterns = [
 
-    for sentence in sentences:
+        # John, complete task by Thursday.
+        r"(\w+),\s*(.*?)\s+by\s+(.*?)[.]",
 
-        sentence = sentence.strip()
+        # John will complete task by Thursday.
+        r"(\w+)\s+will\s+(.*?)\s+by\s+(.*?)[.]",
 
-        if not sentence:
-            continue
+        # John should complete task by Thursday.
+        r"(\w+)\s+should\s+(.*?)\s+by\s+(.*?)[.]"
+    ]
 
-        for keyword in TASK_KEYWORDS:
+    for pattern in patterns:
 
-            if keyword in sentence.lower():
+        matches = re.findall(
+            pattern,
+            transcript,
+            re.IGNORECASE
+        )
 
-                deadline = None
+        for person, task, deadline in matches:
 
-                deadline_match = re.search(
-                    r'by\s+([A-Za-z]+)',
-                    sentence,
-                    re.IGNORECASE
+            parsed_date = dateparser.parse(
+                deadline,
+                settings={
+                    "PREFER_DATES_FROM": "future"
+                }
+            )
+
+            deadline_date = None
+
+            if parsed_date:
+                deadline_date = parsed_date.strftime(
+                    "%Y-%m-%d"
                 )
 
-                if deadline_match:
-
-                    deadline = deadline_match.group(1)
-
-                tasks.append(
-                    {
-                        "task": sentence,
-                        "deadline": deadline
-                    }
-                )
-
-                break
+            tasks.append({
+                "owner": person.strip(),
+                "task": task.strip(),
+                "deadline_text": deadline.strip(),
+                "deadline_date": deadline_date
+            })
 
     return tasks
-

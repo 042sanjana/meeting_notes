@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from routes.meeting_routes import router
 
-app = FastAPI(title="AI Meeting Notes Generator")
+app = FastAPI(
+    title="AI Meeting Notes Generator"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,7 +17,8 @@ app.add_middleware(
 
 app.include_router(router)
 
-
 @app.get("/")
 def home():
-    return {"message": "API running"}
+    return {
+        "message": "AI Meeting Notes Generator API Running"
+    }
