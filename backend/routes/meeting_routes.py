@@ -6,7 +6,7 @@ import os
 
 from datetime import datetime
 
-from services.speech_to_text import transcribe_audio
+from services.text_to_speech import transcribe_audio
 from services.summarizer import generate_summary
 from services.task_extractor import extract_tasks
 
@@ -85,6 +85,34 @@ async def upload_meeting(
 
         meeting_id = cursor.lastrowid
 
+        for task in tasks:
+
+            cursor.execute(
+                """
+                INSERT INTO tasks(
+                    meeting_id,
+                    owner,
+                    task,
+                    deadline_text,
+                    deadline_date,
+                    priority,
+                    status,
+                    created_at
+                )
+                VALUES(?,?,?,?,?,?,?,?)
+                """,
+                (
+                    meeting_id,
+                    task["owner"],
+                    task["task"],
+                    task["deadline_text"],
+                    task["deadline_date"],
+                    task["priority"],
+                    task["status"],
+                    str(datetime.now())
+                )
+            )
+
         conn.commit()
         conn.close()
 
@@ -106,9 +134,87 @@ async def upload_meeting(
 
 
 # ==========================
+# Get All Tasks
+# ==========================
+# ==========================
+# Get All Tasks
+# ==========================
+@router.get("/tasks")
+def get_all_tasks():
+
+    conn = sqlite3.connect("meeting.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            owner,
+            task,
+            deadline_date
+        FROM tasks
+        ORDER BY deadline_date ASC
+    """)
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "owner": row[0],
+            "task": row[1],
+            "deadline_date": row[2]
+        }
+        for row in rows
+    ]
+
+# ==========================
+# Search Meetings
+# ==========================
+@router.get("/search/{keyword}")
+def search_meetings(
+    keyword: str
+):
+
+    conn = sqlite3.connect(
+        "meeting.db"
+    )
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            file_name,
+            summary
+        FROM meetings
+        WHERE transcript LIKE ?
+        OR summary LIKE ?
+        """,
+        (
+            f"%{keyword}%",
+            f"%{keyword}%"
+        )
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "id": row[0],
+            "file_name": row[1],
+            "summary": row[2]
+        }
+        for row in rows
+    ]
+
+
+# ==========================
 # Get All Meetings
 # ==========================
-@router.get("")
+@router.get("/")
 def get_all_meetings():
 
     conn = sqlite3.connect(
@@ -133,20 +239,15 @@ def get_all_meetings():
 
     conn.close()
 
-    meetings = []
-
-    for row in rows:
-
-        meetings.append(
-            {
-                "id": row[0],
-                "file_name": row[1],
-                "summary": row[2],
-                "created_at": row[3]
-            }
-        )
-
-    return meetings
+    return [
+        {
+            "id": row[0],
+            "file_name": row[1],
+            "summary": row[2],
+            "created_at": row[3]
+        }
+        for row in rows
+    ]
 
 
 # ==========================
@@ -194,47 +295,6 @@ def get_meeting(
 
 
 # ==========================
-# Delete Meeting
-# ==========================
-@router.delete("/{meeting_id}")
-def delete_meeting(
-    meeting_id: int
-):
-
-    conn = sqlite3.connect(
-        "meeting.db"
-    )
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        DELETE FROM meetings
-        WHERE id = ?
-        """,
-        (meeting_id,)
-    )
-
-    conn.commit()
-
-    deleted = cursor.rowcount
-
-    conn.close()
-
-    if deleted == 0:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Meeting not found"
-        )
-
-    return {
-        "success": True,
-        "message": "Meeting deleted successfully"
-    }
-
-
-# ==========================
 # Update Summary
 # ==========================
 @router.put("/{meeting_id}/summary")
@@ -271,10 +331,10 @@ def update_summary(
 
 
 # ==========================
-# Get Tasks
+# Delete Meeting
 # ==========================
-@router.get("/{meeting_id}/tasks")
-def get_tasks(
+@router.delete("/{meeting_id}")
+def delete_meeting(
     meeting_id: int
 ):
 
@@ -286,190 +346,33 @@ def get_tasks(
 
     cursor.execute(
         """
-        SELECT tasks
-        FROM meetings
+        DELETE FROM tasks
+        WHERE meeting_id = ?
+        """,
+        (meeting_id,)
+    )
+
+    cursor.execute(
+        """
+        DELETE FROM meetings
         WHERE id = ?
         """,
         (meeting_id,)
     )
 
-    row = cursor.fetchone()
-
-    conn.close()
-
-    if not row:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Meeting not found"
-        )
-
-    return json.loads(
-        row[0]
-    )
-
-
-# ==========================
-# Search Meetings
-# ==========================
-@router.get("/search/{keyword}")
-def search_meetings(
-    keyword: str
-):
-
-    conn = sqlite3.connect(
-        "meeting.db"
-    )
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT
-            id,
-            file_name,
-            summary
-        FROM meetings
-        WHERE transcript LIKE ?
-        OR summary LIKE ?
-        """
-        ,
-        (
-            f"%{keyword}%",
-            f"%{keyword}%"
-        )
-    )
-
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    return [
-        {
-            "id": row[0],
-            "file_name": row[1],
-            "summary": row[2]
-        }
-        for row in rows
-    ]
-
-
-# ==========================
-# Meeting Statistics
-# ==========================
-@router.get("/stats/overview")
-def meeting_stats():
-
-    conn = sqlite3.connect(
-        "meeting.db"
-    )
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT COUNT(*)
-        FROM meetings
-        """
-    )
-
-    total_meetings = cursor.fetchone()[0]
-
-    cursor.execute(
-        """
-        SELECT tasks
-        FROM meetings
-        """
-    )
-
-    rows = cursor.fetchall()
-
-    total_tasks = 0
-
-    for row in rows:
-
-        try:
-            tasks = json.loads(
-                row[0]
-            )
-
-            total_tasks += len(tasks)
-
-        except:
-            pass
-
-    conn.close()
-
-    return {
-        "total_meetings": total_meetings,
-        "total_tasks": total_tasks
-    }
-
-
-# ==========================
-# Reprocess Meeting
-# ==========================
-@router.post("/{meeting_id}/reprocess")
-def reprocess_meeting(
-    meeting_id: int
-):
-
-    conn = sqlite3.connect(
-        "meeting.db"
-    )
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT transcript
-        FROM meetings
-        WHERE id = ?
-        """,
-        (meeting_id,)
-    )
-
-    row = cursor.fetchone()
-
-    if not row:
-
-        conn.close()
-
-        raise HTTPException(
-            status_code=404,
-            detail="Meeting not found"
-        )
-
-    transcript = row[0]
-
-    summary = generate_summary(
-        transcript
-    )
-
-    tasks = extract_tasks(
-        transcript
-    )
-
-    cursor.execute(
-        """
-        UPDATE meetings
-        SET summary = ?,
-            tasks = ?
-        WHERE id = ?
-        """,
-        (
-            summary,
-            json.dumps(tasks),
-            meeting_id
-        )
-    )
+    deleted = cursor.rowcount
 
     conn.commit()
     conn.close()
 
+    if deleted == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Meeting not found"
+        )
+
     return {
         "success": True,
-        "meeting_id": meeting_id,
-        "summary": summary,
-        "tasks": tasks
+        "message": "Meeting deleted successfully"
     }
