@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS tasks(
     created_at TEXT
 )
 """)  
+    cursor.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    email TEXT UNIQUE,
+    password TEXT
+)
+""")
     
     conn.commit()
 except sqlite3.Error as e:

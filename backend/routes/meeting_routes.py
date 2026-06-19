@@ -132,15 +132,8 @@ async def upload_meeting(
             detail=str(e)
         )
 
-
-# ==========================
-# Get All Tasks
-# ==========================
-# ==========================
-# Get All Tasks
-# ==========================
-@router.get("/tasks")
-def get_all_tasks():
+@router.get("/{meeting_id}/tasks")
+def get_meeting_tasks(meeting_id: int):
 
     conn = sqlite3.connect("meeting.db")
     cursor = conn.cursor()
@@ -149,10 +142,13 @@ def get_all_tasks():
         SELECT
             owner,
             task,
-            deadline_date
+            deadline_date,
+            priority,
+            status
         FROM tasks
-        ORDER BY deadline_date ASC
-    """)
+        WHERE meeting_id = ?
+        ORDER BY deadline_date
+    """, (meeting_id,))
 
     rows = cursor.fetchall()
 
@@ -162,11 +158,50 @@ def get_all_tasks():
         {
             "owner": row[0],
             "task": row[1],
-            "deadline_date": row[2]
+            "deadline_date": row[2],
+            "priority": row[3],
+            "status": row[4]
         }
         for row in rows
     ]
+@router.get("/latest/tasks")
+def latest_tasks():
 
+    conn = sqlite3.connect("meeting.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT MAX(id)
+        FROM meetings
+    """)
+
+    latest_id = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT
+            owner,
+            task,
+            deadline_date,
+            priority,
+            status
+        FROM tasks
+        WHERE meeting_id = ?
+    """, (latest_id,))
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "owner": row[0],
+            "task": row[1],
+            "deadline_date": row[2],
+            "priority": row[3],
+            "status": row[4]
+        }
+        for row in rows
+    ]
 # ==========================
 # Search Meetings
 # ==========================
