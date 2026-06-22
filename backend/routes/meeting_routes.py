@@ -131,7 +131,41 @@ async def upload_meeting(
             status_code=500,
             detail=str(e)
         )
+        
+@router.put("/tasks/{task_id}/status")
+def update_task_status(
+    task_id: int,
+    status: str
+):
 
+    print(
+        f"Task ID={task_id}, Status={status}"
+    )
+
+    conn = sqlite3.connect("meeting.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE tasks
+        SET status = ?
+        WHERE id = ?
+        """,
+        (status, task_id)
+    )
+
+    conn.commit()
+
+    print(
+        "Rows updated:",
+        cursor.rowcount
+    )
+
+    conn.close()
+
+    return {
+        "message": "Task status updated"
+    }
 @router.get("/{meeting_id}/tasks")
 def get_meeting_tasks(meeting_id: int):
 
@@ -202,6 +236,29 @@ def latest_tasks():
         }
         for row in rows
     ]
+    
+    
+    
+    @router.get("/tasks")
+    def get_all_tasks():
+        conn=sqlite3.connect("meeting.db")
+        conn.row_factory=sqlite3.Row
+        
+        cursor=conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT *
+            FROM tasks
+            ORDER BY deadline_date
+            """
+        )
+        tasks=[
+            dict(row)
+            for row in cursor.fetchall()
+        ]
+        
+        
 # ==========================
 # Search Meetings
 # ==========================
@@ -411,3 +468,6 @@ def delete_meeting(
         "success": True,
         "message": "Meeting deleted successfully"
     }
+    
+    
+   
