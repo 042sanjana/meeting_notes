@@ -26,6 +26,7 @@ os.makedirs(
 # ==========================
 @router.post("/upload")
 async def upload_meeting(
+    user_id: int,
     file: UploadFile = File(...)
 ):
     try:
@@ -66,15 +67,17 @@ async def upload_meeting(
         cursor.execute(
             """
             INSERT INTO meetings(
+                user_id,
                 file_name,
                 transcript,
                 summary,
                 tasks,
                 created_at
             )
-            VALUES(?,?,?,?,?)
+            VALUES(?,?,?,?,?,?)
             """,
             (
+                user_id,
                 file.filename,
                 transcript,
                 summary,
@@ -138,11 +141,8 @@ def update_task_status(
     status: str
 ):
 
-    print(
-        f"Task ID={task_id}, Status={status}"
-    )
-
     conn = sqlite3.connect("meeting.db")
+
     cursor = conn.cursor()
 
     cursor.execute(
@@ -151,34 +151,40 @@ def update_task_status(
         SET status = ?
         WHERE id = ?
         """,
-        (status, task_id)
+        (
+            status,
+            task_id
+        )
     )
 
     conn.commit()
 
-    print(
-        "Rows updated:",
-        cursor.rowcount
-    )
+    updated_rows = cursor.rowcount
 
     conn.close()
 
+    if updated_rows == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found"
+        )
+
     return {
-        "message": "Task status updated"
+        "success": True,
+        "task_id": task_id,
+        "status": status
     }
 @router.get("/{meeting_id}/tasks")
 def get_meeting_tasks(meeting_id: int):
 
     conn = sqlite3.connect("meeting.db")
+    conn.row_factory = sqlite3.Row
+
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT
-            owner,
-            task,
-            deadline_date,
-            priority,
-            status
+        SELECT *
         FROM tasks
         WHERE meeting_id = ?
         ORDER BY deadline_date
@@ -189,76 +195,31 @@ def get_meeting_tasks(meeting_id: int):
     conn.close()
 
     return [
-        {
-            "owner": row[0],
-            "task": row[1],
-            "deadline_date": row[2],
-            "priority": row[3],
-            "status": row[4]
-        }
+        dict(row)
         for row in rows
     ]
-@router.get("/latest/tasks")
-def latest_tasks():
+@router.get("/tasks")
+def get_all_tasks():
 
     conn = sqlite3.connect("meeting.db")
+    conn.row_factory = sqlite3.Row
+
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT MAX(id)
-        FROM meetings
-    """)
-
-    latest_id = cursor.fetchone()[0]
-
-    cursor.execute("""
-        SELECT
-            owner,
-            task,
-            deadline_date,
-            priority,
-            status
+        SELECT *
         FROM tasks
-        WHERE meeting_id = ?
-    """, (latest_id,))
+        ORDER BY deadline_date
+    """)
 
     rows = cursor.fetchall()
 
     conn.close()
 
     return [
-        {
-            "owner": row[0],
-            "task": row[1],
-            "deadline_date": row[2],
-            "priority": row[3],
-            "status": row[4]
-        }
+        dict(row)
         for row in rows
     ]
-    
-    
-    
-    @router.get("/tasks")
-    def get_all_tasks():
-        conn=sqlite3.connect("meeting.db")
-        conn.row_factory=sqlite3.Row
-        
-        cursor=conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT *
-            FROM tasks
-            ORDER BY deadline_date
-            """
-        )
-        tasks=[
-            dict(row)
-            for row in cursor.fetchall()
-        ]
-        
-        
 # ==========================
 # Search Meetings
 # ==========================
@@ -306,13 +267,10 @@ def search_meetings(
 # ==========================
 # Get All Meetings
 # ==========================
-@router.get("/")
-def get_all_meetings():
+@router.get("/user/{user_id}")
+def get_user_meetings(user_id: int):
 
-    conn = sqlite3.connect(
-        "meeting.db"
-    )
-
+    conn = sqlite3.connect("meeting.db")
     cursor = conn.cursor()
 
     cursor.execute(
@@ -323,8 +281,10 @@ def get_all_meetings():
             summary,
             created_at
         FROM meetings
+        WHERE user_id = ?
         ORDER BY id DESC
-        """
+        """,
+        (user_id,)
     )
 
     rows = cursor.fetchall()
@@ -468,6 +428,7 @@ def delete_meeting(
         "success": True,
         "message": "Meeting deleted successfully"
     }
+    
     
     
    
