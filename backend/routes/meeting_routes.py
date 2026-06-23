@@ -1,11 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
+
 import shutil
 import sqlite3
 import json
 import os
-
-from datetime import datetime
-
+import dateparser
+from fastapi.responses import FileResponse
+import tempfile
+from datetime import datetime, timedelta
 from services.text_to_speech import transcribe_audio
 from services.summarizer import generate_summary
 from services.task_extractor import extract_tasks
@@ -134,6 +136,215 @@ async def upload_meeting(
             status_code=500,
             detail=str(e)
         )
+        
+@router.get("/tasks/export/{user_id}")
+def export_user_tasks(user_id: int):
+
+    conn = sqlite3.connect("meeting.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            t.task,
+            t.owner,
+            t.deadline_date,
+            t.priority
+        FROM tasks t
+        INNER JOIN meetings m
+            ON t.meeting_id = m.id
+        WHERE m.user_id = ?
+        """,
+        (user_id,)
+    )
+
+    tasks = cursor.fetchall()
+
+    conn.close()
+
+    if not tasks:
+        raise HTTPException(
+            status_code=404,
+            detail="No tasks found"
+        )
+
+    ics_content = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//AI Meeting Notes//EN
+"""
+
+    for task in tasks:
+
+        task_name = task[0]
+        owner = task[1]
+        deadline = task[2]
+        priority = task[3]
+
+        try:
+
+            if "-" in deadline:
+
+                parts = deadline.split("-")
+
+                if len(parts[0]) == 4:
+
+                    dt = datetime.strptime(
+                        deadline[:10],
+                        "%Y-%m-%d"
+                    )
+
+                else:
+
+                    dt = datetime.strptime(
+                        deadline[:10],
+                        "%d-%m-%Y"
+                    )
+
+            else:
+                continue
+
+        except:
+            continue
+
+        start_date = dt.strftime("%Y%m%d")
+
+        end_date = (
+            dt + timedelta(days=1)
+        ).strftime("%Y%m%d")
+    ics_content += f"""
+BEGIN:VEVENT
+SUMMARY:{task_name}
+DESCRIPTION:Owner: {owner} | Priority: {priority}
+DTSTART;VALUE=DATE:{start_date}
+DTEND;VALUE=DATE:{end_date}
+
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Reminder - {task_name}
+TRIGGER:-P1D
+END:VALARM
+
+END:VEVENT
+"""
+
+    file_path = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".ics"
+    ).name
+
+    with open(
+        file_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        file.write(
+            ics_content
+        )
+
+    return FileResponse(
+        path=file_path,
+        media_type="text/calendar",
+        filename=f"user_{user_id}_tasks.ics"
+    )
+        
+        
+@router.get("/user/{user_id}/tasks")
+def get_user_tasks(user_id: int):
+
+    conn = sqlite3.connect(
+        "meeting.db"
+    )
+
+    conn.row_factory = sqlite3.Row
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT t.*
+        FROM tasks t
+        JOIN meetings m
+        ON t.meeting_id = m.id
+        WHERE m.user_id = ?
+        ORDER BY t.deadline_date
+        """,
+        (user_id,)
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+@router.get("/tasks/{task_id}/outlook")
+def export_task_to_outlook(task_id: int):
+
+    conn = sqlite3.connect("meeting.db")
+    conn.row_factory = sqlite3.Row
+
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT *
+        FROM tasks
+        WHERE id = ?
+    """, (task_id,))
+
+    task = cursor.fetchone()
+
+    conn.close()
+
+    if not task:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found"
+        )
+
+    deadline = task["deadline_date"]
+
+    if not deadline:
+        raise HTTPException(
+            status_code=400,
+            detail="Task has no deadline"
+        )
+
+    dt = datetime.strptime(
+        deadline[:10],
+        "%Y-%m-%d"
+    )
+
+    start_date = dt.strftime("%Y%m%d")
+    end_date = dt.strftime("%Y%m%d")
+
+    ics_content = f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//AI Meeting Notes//EN
+BEGIN:VEVENT
+UID:{task["id"]}
+DTSTAMP:{datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}
+DTSTART;VALUE=DATE:{start_date}
+DTEND;VALUE=DATE:{end_date}
+SUMMARY:{task["task"]}
+DESCRIPTION:Owner: {task["owner"]}
+END:VEVENT
+END:VCALENDAR
+"""
+
+    file_name = f"task_{task_id}.ics"
+
+    with open(file_name, "w") as file:
+        file.write(ics_content)
+
+    return FileResponse(
+        file_name,
+        media_type="text/calendar",
+        filename=file_name
+    )
         
         
         
