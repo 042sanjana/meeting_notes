@@ -135,6 +135,9 @@ async def upload_meeting(
             detail=str(e)
         )
         
+        
+        
+        
 @router.put("/tasks/{task_id}/status")
 def update_task_status(
     task_id: int,
@@ -175,6 +178,48 @@ def update_task_status(
         "task_id": task_id,
         "status": status
     }
+    
+@router.put("/tasks/{task_id}/deadline")
+def update_task_deadline(
+    task_id: int,
+    deadline_date: str
+):
+
+    conn = sqlite3.connect("meeting.db")
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE tasks
+        SET deadline_date = ?
+        WHERE id = ?
+        """,
+        (
+            deadline_date,
+            task_id
+        )
+    )
+
+    conn.commit()
+
+    updated_rows = cursor.rowcount
+
+    conn.close()
+
+    if updated_rows == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found"
+        )
+
+    return {
+        "success": True,
+        "task_id": task_id,
+        "deadline_date": deadline_date
+    }
+    
 @router.get("/{meeting_id}/tasks")
 def get_meeting_tasks(meeting_id: int):
 
@@ -198,6 +243,35 @@ def get_meeting_tasks(meeting_id: int):
         dict(row)
         for row in rows
     ]
+    
+    
+@router.get("/user/{user_id}/tasks")
+def get_user_tasks(user_id: int):
+
+    conn = sqlite3.connect("meeting.db")
+    conn.row_factory = sqlite3.Row
+
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT t.*
+        FROM tasks t
+        INNER JOIN meetings m
+        ON t.meeting_id = m.id
+        WHERE m.user_id = ?
+        ORDER BY t.deadline_date
+    """, (user_id,))
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+    
+    
 @router.get("/tasks")
 def get_all_tasks():
 
