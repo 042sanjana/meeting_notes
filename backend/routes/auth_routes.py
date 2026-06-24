@@ -64,14 +64,17 @@ def register_user(data: RegisterRequest):
         )
     )
 
+    user_id = cursor.lastrowid
+
     conn.commit()
     conn.close()
 
     return {
-        "success": True,
+        "id": user_id,
+        "name": data.name,
+        "email": data.email,
         "message": "Registration successful"
     }
-
 
 # ==========================
 # Login

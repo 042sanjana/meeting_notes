@@ -136,7 +136,7 @@ async def upload_meeting(
             status_code=500,
             detail=str(e)
         )
-        
+
 @router.get("/tasks/export/{user_id}")
 def export_user_tasks(user_id: int):
 
@@ -159,7 +159,6 @@ def export_user_tasks(user_id: int):
     )
 
     tasks = cursor.fetchall()
-
     conn.close()
 
     if not tasks:
@@ -171,6 +170,8 @@ def export_user_tasks(user_id: int):
     ics_content = """BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//AI Meeting Notes//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
 """
 
     for task in tasks:
@@ -182,10 +183,14 @@ PRODID:-//AI Meeting Notes//EN
 
         try:
 
+            if not deadline:
+                continue
+
             if "-" in deadline:
 
                 parts = deadline.split("-")
 
+                # Format: YYYY-MM-DD
                 if len(parts[0]) == 4:
 
                     dt = datetime.strptime(
@@ -193,6 +198,7 @@ PRODID:-//AI Meeting Notes//EN
                         "%Y-%m-%d"
                     )
 
+                # Format: DD-MM-YYYY
                 else:
 
                     dt = datetime.strptime(
@@ -203,15 +209,17 @@ PRODID:-//AI Meeting Notes//EN
             else:
                 continue
 
-        except:
+        except Exception:
             continue
 
+        # Create all-day calendar event
         start_date = dt.strftime("%Y%m%d")
 
         end_date = (
             dt + timedelta(days=1)
         ).strftime("%Y%m%d")
-    ics_content += f"""
+
+        ics_content += f"""
 BEGIN:VEVENT
 SUMMARY:{task_name}
 DESCRIPTION:Owner: {owner} | Priority: {priority}
@@ -227,6 +235,10 @@ END:VALARM
 END:VEVENT
 """
 
+    ics_content += """
+END:VCALENDAR
+"""
+
     file_path = tempfile.NamedTemporaryFile(
         delete=False,
         suffix=".ics"
@@ -238,49 +250,13 @@ END:VEVENT
         encoding="utf-8"
     ) as file:
 
-        file.write(
-            ics_content
-        )
+        file.write(ics_content)
 
     return FileResponse(
         path=file_path,
         media_type="text/calendar",
         filename=f"user_{user_id}_tasks.ics"
     )
-        
-        
-@router.get("/user/{user_id}/tasks")
-def get_user_tasks(user_id: int):
-
-    conn = sqlite3.connect(
-        "meeting.db"
-    )
-
-    conn.row_factory = sqlite3.Row
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT t.*
-        FROM tasks t
-        JOIN meetings m
-        ON t.meeting_id = m.id
-        WHERE m.user_id = ?
-        ORDER BY t.deadline_date
-        """,
-        (user_id,)
-    )
-
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    return [
-        dict(row)
-        for row in rows
-    ]
-
 @router.get("/tasks/{task_id}/outlook")
 def export_task_to_outlook(task_id: int):
 
