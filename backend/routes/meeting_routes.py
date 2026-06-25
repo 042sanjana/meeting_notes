@@ -1,5 +1,11 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
 
+from fastapi import (
+    APIRouter,
+    UploadFile,
+    File,
+    HTTPException,
+    Depends
+)
 import shutil
 import sqlite3
 import json
@@ -8,6 +14,7 @@ import dateparser
 from fastapi.responses import FileResponse
 import tempfile
 from datetime import datetime, timedelta
+from security import get_current_user
 from services.text_to_speech import transcribe_audio
 from services.summarizer import generate_summary
 from services.task_extractor import extract_tasks
@@ -26,12 +33,18 @@ os.makedirs(
 # ==========================
 # Upload Meeting
 # ==========================
+
+
+
 @router.post("/upload")
 async def upload_meeting(
-    user_id: int,
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
 ):
+
     try:
+
+        user_id = current_user["id"]
 
         file_path = os.path.join(
             "uploads",
@@ -136,7 +149,6 @@ async def upload_meeting(
             status_code=500,
             detail=str(e)
         )
-
 @router.get("/tasks/export/{user_id}")
 def export_user_tasks(user_id: int):
 
@@ -257,74 +269,8 @@ END:VCALENDAR
         media_type="text/calendar",
         filename=f"user_{user_id}_tasks.ics"
     )
-@router.get("/tasks/{task_id}/outlook")
-def export_task_to_outlook(task_id: int):
 
-    conn = sqlite3.connect("meeting.db")
-    conn.row_factory = sqlite3.Row
 
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT *
-        FROM tasks
-        WHERE id = ?
-    """, (task_id,))
-
-    task = cursor.fetchone()
-
-    conn.close()
-
-    if not task:
-        raise HTTPException(
-            status_code=404,
-            detail="Task not found"
-        )
-
-    deadline = task["deadline_date"]
-
-    if not deadline:
-        raise HTTPException(
-            status_code=400,
-            detail="Task has no deadline"
-        )
-
-    dt = datetime.strptime(
-        deadline[:10],
-        "%Y-%m-%d"
-    )
-
-    start_date = dt.strftime("%Y%m%d")
-    end_date = dt.strftime("%Y%m%d")
-
-    ics_content = f"""BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//AI Meeting Notes//EN
-BEGIN:VEVENT
-UID:{task["id"]}
-DTSTAMP:{datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}
-DTSTART;VALUE=DATE:{start_date}
-DTEND;VALUE=DATE:{end_date}
-SUMMARY:{task["task"]}
-DESCRIPTION:Owner: {task["owner"]}
-END:VEVENT
-END:VCALENDAR
-"""
-
-    file_name = f"task_{task_id}.ics"
-
-    with open(file_name, "w") as file:
-        file.write(ics_content)
-
-    return FileResponse(
-        file_name,
-        media_type="text/calendar",
-        filename=file_name
-    )
-        
-        
-        
-        
 @router.put("/tasks/{task_id}/status")
 def update_task_status(
     task_id: int,
@@ -365,6 +311,7 @@ def update_task_status(
         "task_id": task_id,
         "status": status
     }
+
     
 @router.put("/tasks/{task_id}/deadline")
 def update_task_deadline(
@@ -457,6 +404,9 @@ def get_user_tasks(user_id: int):
         dict(row)
         for row in rows
     ]
+    
+    
+
     
     
 @router.get("/tasks")

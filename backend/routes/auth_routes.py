@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import sqlite3
 
+from security import create_access_token
+
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
@@ -69,12 +71,22 @@ def register_user(data: RegisterRequest):
     conn.commit()
     conn.close()
 
+    token = create_access_token(
+        {
+            "user_id": user_id
+        }
+    )
+
     return {
-        "id": user_id,
-        "name": data.name,
-        "email": data.email,
+        "access_token": token,
+        "user": {
+            "id": user_id,
+            "name": data.name,
+            "email": data.email
+        },
         "message": "Registration successful"
     }
+
 
 # ==========================
 # Login
@@ -88,7 +100,10 @@ def login_user(data: LoginRequest):
 
     cursor.execute(
         """
-        SELECT id,name,email
+        SELECT
+            id,
+            name,
+            email
         FROM users
         WHERE email=?
         AND password=?
@@ -110,8 +125,14 @@ def login_user(data: LoginRequest):
             detail="Invalid credentials"
         )
 
+    token = create_access_token(
+        {
+            "user_id": user[0]
+        }
+    )
+
     return {
-        "success": True,
+        "access_token": token,
         "user": {
             "id": user[0],
             "name": user[1],
